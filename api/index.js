@@ -10,6 +10,10 @@ globalForMongoose._mongoose = globalForMongoose._mongoose || {
 };
 
 async function connectToDatabase() {
+  if (!process.env.MONGO_URI) {
+    throw new Error('Missing MONGO_URI environment variable.');
+  }
+
   if (globalForMongoose._mongoose.conn) {
     return globalForMongoose._mongoose.conn;
   }
@@ -25,6 +29,12 @@ async function connectToDatabase() {
 }
 
 export default async function handler(req, res) {
-  await connectToDatabase();
-  return app(req, res);
+  try {
+    await connectToDatabase();
+    return app(req, res);
+  } catch (error) {
+    return res.status(500).json({
+      error: error.message || 'Server initialization failed.',
+    });
+  }
 }

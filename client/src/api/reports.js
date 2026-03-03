@@ -5,10 +5,20 @@
  */
 
 async function handleResponse(res) {
-  const data = await res.json();
+  const contentType = res.headers.get('content-type') || '';
+
+  let data;
+  if (contentType.includes('application/json')) {
+    data = await res.json();
+  } else {
+    const text = await res.text();
+    data = { error: text || `Request failed with status ${res.status}` };
+  }
+
   if (!res.ok) {
     throw new Error(data?.error || `Request failed with status ${res.status}`);
   }
+
   return data;
 }
 
