@@ -1,16 +1,17 @@
 import express from 'express';
 import Report from '../models/Report.js';
-import { sessionMiddleware } from '../middleware/session.js';
 
 const router = express.Router();
-
-// Apply session validation to all routes in this file
-router.use(sessionMiddleware);
 
 // ── POST /api/reports ───────────────────────────────────────────────────────
 // Save a newly parsed report for the current session.
 router.post('/', async (req, res) => {
   try {
+    const headerSessionId = req.headers['x-session-id'];
+    if (!headerSessionId) {
+      return res.status(400).json({ error: 'Missing x-session-id header.' });
+    }
+
     const { title, capacityData } = req.body;
 
     if (!capacityData?.design || !capacityData?.actual) {
@@ -18,7 +19,7 @@ router.post('/', async (req, res) => {
     }
 
     const report = await Report.create({
-      sessionId: req.sessionId,
+      sessionId: headerSessionId,
       title: title || 'Battery Audit',
       capacityData: {
         design: capacityData.design,
@@ -40,11 +41,19 @@ router.post('/', async (req, res) => {
 // can only read its own history.
 router.get('/:sessionId', async (req, res) => {
   try {
-    if (req.params.sessionId !== req.sessionId) {
+    const headerSessionId = req.headers['x-session-id'];
+    const paramSessionId = req.params.sessionId;
+
+    if (headerSessionId && headerSessionId !== paramSessionId) {
       return res.status(403).json({ error: 'Session ID mismatch.' });
     }
 
-    const reports = await Report.find({ sessionId: req.sessionId })
+    const effectiveSessionId = headerSessionId || paramSessionId;
+    if (!effectiveSessionId) {
+      return res.status(400).json({ error: 'Missing session ID.' });
+    }
+
+    const reports = await Report.find({ sessionId: effectiveSessionId })
       .sort({ createdAt: -1 })
       .lean();
 
@@ -60,6 +69,11 @@ router.get('/:sessionId', async (req, res) => {
 // Only the owning session may update a report.
 router.patch('/:id', async (req, res) => {
   try {
+    const headerSessionId = req.headers['x-session-id'];
+    if (!headerSessionId) {
+      return res.status(400).json({ error: 'Missing x-session-id header.' });
+    }
+
     const allowedFields = ['title', 'notes'];
     const updates = {};
 
@@ -74,7 +88,7 @@ router.patch('/:id', async (req, res) => {
     }
 
     const report = await Report.findOneAndUpdate(
-      { _id: req.params.id, sessionId: req.sessionId },
+      { _id: req.params.id, sessionId: headerSessionId },
       { $set: updates },
       { new: true }
     );
@@ -94,9 +108,14 @@ router.patch('/:id', async (req, res) => {
 // Remove a specific report. Only the owning session may delete it.
 router.delete('/:id', async (req, res) => {
   try {
+    const headerSessionId = req.headers['x-session-id'];
+    if (!headerSessionId) {
+      return res.status(400).json({ error: 'Missing x-session-id header.' });
+    }
+
     const report = await Report.findOneAndDelete({
       _id: req.params.id,
-      sessionId: req.sessionId,
+      sessionId: headerSessionId,
     });
 
     if (!report) {
